@@ -198,10 +198,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "codecarbon" },
+    { name = "psutil" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "codecarbon", specifier = ">=3.2.3" }]
+requires-dist = [
+    { name = "codecarbon", specifier = ">=3.2.3" },
+    { name = "psutil", specifier = ">=5.9" },
+]
 
 [[package]]
 name = "click"
