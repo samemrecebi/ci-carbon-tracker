@@ -1,0 +1,57 @@
+name: "CI Carbon Tracker — Stop"
+description: "Stop tracking, generate report, optionally comment on PR"
+
+inputs:
+  pr-comment:
+    description: "Post report as PR comment (true/false)"
+    required: false
+    default: "true"
+  history-file:
+    description: "Path to CSV history file (relative to repo root)"
+    required: false
+    default: "carbon-history.csv"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Stop tracker and generate report
+      shell: bash
+      env:
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+      run: |
+        python ${{ github.action_path }}/report.py \
+          --dir "$RUNNER_TEMP" \
+          --markdown "$RUNNER_TEMP/carbon-report.md" \
+          --history "${{ inputs.history-file }}"
+
+    - name: Print report to log
+      shell: bash
+      run: cat "$RUNNER_TEMP/carbon-report.md"
+
+    - name: Comment on PR
+      if: ${{ inputs.pr-comment == 'true' && github.event_name == 'pull_request' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        # Delete previous carbon tracker comment if it exists
+        COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+          --jq '.[] | select(.body | startswith("## CI Carbon Report")) | .id' 2>/dev/null || true)
+        if [ -n "$COMMENT_ID" ]; then
+          gh api -X DELETE "repos/${{ github.repository }}/issues/comments/$COMMENT_ID"
+        fi
+        gh pr comment "${{ github.event.pull_request.number }}" --body-file "$RUNNER_TEMP/carbon-report.md"
+
+    - name: Commit carbon history
+      shell: bash
+      run: |
+        BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
+        git fetch origin "$BRANCH"
+        git checkout "$BRANCH"
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add "${{ inputs.history-file }}"
+        git diff --cached --quiet && echo "No changes to commit" && exit 0
+        git commit -m "chore: update carbon history [skip ci]"
+        git push origin "$BRANCH"

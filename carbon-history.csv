@@ -1,0 +1,2 @@
+timestamp,pr_number,branch,duration_s,energy_wh,co2_g,cpu_avg,cpu_peak,mem_avg_pct,mem_peak_mb,disk_read_mb,disk_write_mb,net_sent_mb,net_recv_mb
+2026-03-19T16:51:56.964580+00:00,test-local,local,5.52,0.0332,0.0089,2.52,2.9,7.7,2458.6,0.0,8.84,0.81,0.73
