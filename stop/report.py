@@ -44,7 +44,58 @@ def print_report(energy_row: dict, metrics: dict):
     print()
 
 
-def generate_markdown(energy_row: dict, metrics: dict) -> str:
+def compute_history_stats(history_path: Path, current_workflow: str) -> dict:
+    """Read history CSV and compute per-workflow and repo-wide stats."""
+    stats = {
+        "repo_total_runs": 0,
+        "repo_total_energy_wh": 0.0,
+        "repo_total_co2_g": 0.0,
+        "repo_total_duration_s": 0.0,
+        "workflow_total_runs": 0,
+        "workflow_total_energy_wh": 0.0,
+        "workflow_total_co2_g": 0.0,
+        "workflow_total_duration_s": 0.0,
+        "workflow_name": current_workflow,
+        "workflows": {},
+    }
+
+    if not history_path.exists() or history_path.stat().st_size == 0:
+        return stats
+
+    with open(history_path, newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    for row in rows:
+        try:
+            energy = float(row.get("energy_wh", 0))
+            co2 = float(row.get("co2_g", 0))
+            duration = float(row.get("duration_s", 0))
+        except (ValueError, TypeError):
+            continue  # skip malformed rows (e.g. old CSV format)
+        wf = row.get("workflow", "")
+
+        stats["repo_total_runs"] += 1
+        stats["repo_total_energy_wh"] += energy
+        stats["repo_total_co2_g"] += co2
+        stats["repo_total_duration_s"] += duration
+
+        if wf not in stats["workflows"]:
+            stats["workflows"][wf] = {"runs": 0, "energy_wh": 0.0, "co2_g": 0.0, "duration_s": 0.0}
+        stats["workflows"][wf]["runs"] += 1
+        stats["workflows"][wf]["energy_wh"] += energy
+        stats["workflows"][wf]["co2_g"] += co2
+        stats["workflows"][wf]["duration_s"] += duration
+
+        if wf == current_workflow:
+            stats["workflow_total_runs"] += 1
+            stats["workflow_total_energy_wh"] += energy
+            stats["workflow_total_co2_g"] += co2
+            stats["workflow_total_duration_s"] += duration
+
+    return stats
+
+
+def generate_markdown(energy_row: dict, metrics: dict, stats: dict) -> str:
     duration = float(energy_row["duration"])
     energy_kwh = float(energy_row["energy_consumed"])
     co2_kg = float(energy_row["emissions"])
@@ -52,7 +103,9 @@ def generate_markdown(energy_row: dict, metrics: dict) -> str:
     ram_energy_kwh = float(energy_row.get("ram_energy", 0))
     source = energy_row.get("energy_consumed_source", "estimated")
 
-    return f"""## CI Carbon Report
+    md = f"""## CI Carbon Report
+
+### This Run
 
 | Metric | Value |
 |--------|-------|
@@ -65,13 +118,41 @@ def generate_markdown(energy_row: dict, metrics: dict) -> str:
 | Memory avg (peak) | {metrics['mem_avg_pct']}% ({metrics['mem_peak_mb']} MB) |
 | Disk R / W | {metrics['disk_read_mb']} / {metrics['disk_write_mb']} MB |
 | Net sent / recv | {metrics['net_sent_mb']} / {metrics['net_recv_mb']} MB |
+
+### Workflow: {stats['workflow_name']}
+
+| Metric | Value |
+|--------|-------|
+| Total runs | {stats['workflow_total_runs']} |
+| Total energy | {stats['workflow_total_energy_wh']:.4f} Wh |
+| Total CO2 | {stats['workflow_total_co2_g']:.4f} g |
+| Total duration | {stats['workflow_total_duration_s']:.1f} s |
+
+### Repository Totals (all workflows)
+
+| Metric | Value |
+|--------|-------|
+| Total runs | {stats['repo_total_runs']} |
+| Total energy | {stats['repo_total_energy_wh']:.4f} Wh |
+| Total CO2 | {stats['repo_total_co2_g']:.4f} g |
+| Total duration | {stats['repo_total_duration_s']:.1f} s |
 """
+
+    if len(stats["workflows"]) > 1:
+        md += "\n### Per-Workflow Breakdown\n\n"
+        md += "| Workflow | Runs | Energy (Wh) | CO2 (g) |\n"
+        md += "|----------|------|-------------|--------|\n"
+        for wf_name, wf_stats in sorted(stats["workflows"].items()):
+            md += f"| {wf_name} | {wf_stats['runs']} | {wf_stats['energy_wh']:.4f} | {wf_stats['co2_g']:.4f} |\n"
+
+    return md
 
 
 HISTORY_FIELDS = [
-    "timestamp", "pr_number", "branch", "duration_s", "energy_wh",
-    "co2_g", "cpu_avg", "cpu_peak", "mem_avg_pct", "mem_peak_mb",
-    "disk_read_mb", "disk_write_mb", "net_sent_mb", "net_recv_mb",
+    "timestamp", "workflow", "run_number", "pr_number", "branch",
+    "duration_s", "energy_wh", "co2_g", "cpu_avg", "cpu_peak",
+    "mem_avg_pct", "mem_peak_mb", "disk_read_mb", "disk_write_mb",
+    "net_sent_mb", "net_recv_mb",
 ]
 
 
@@ -80,6 +161,8 @@ def append_history(history_path: Path, energy_row: dict, metrics: dict):
 
     entry = {
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "workflow": os.environ.get("WORKFLOW_NAME", ""),
+        "run_number": os.environ.get("RUN_NUMBER", ""),
         "pr_number": os.environ.get("PR_NUMBER", ""),
         "branch": os.environ.get("BRANCH_NAME", ""),
         "duration_s": round(float(energy_row["duration"]), 2),
@@ -148,14 +231,22 @@ def main():
     metrics = json.loads(metrics_file.read_text())
     print_report(rows[-1], metrics)
 
-    if args.markdown:
-        md = generate_markdown(rows[-1], metrics)
-        Path(args.markdown).write_text(md)
-        print(f"[report] markdown written to {args.markdown}")
-
     if args.history:
         append_history(Path(args.history), rows[-1], metrics)
         print(f"[report] history appended to {args.history}")
+
+    if args.markdown:
+        workflow_name = os.environ.get("WORKFLOW_NAME", "unknown")
+        history_path = Path(args.history) if args.history else None
+        stats = compute_history_stats(history_path, workflow_name) if history_path else {
+            "repo_total_runs": 0, "repo_total_energy_wh": 0, "repo_total_co2_g": 0,
+            "repo_total_duration_s": 0, "workflow_total_runs": 0, "workflow_total_energy_wh": 0,
+            "workflow_total_co2_g": 0, "workflow_total_duration_s": 0,
+            "workflow_name": workflow_name, "workflows": {},
+        }
+        md = generate_markdown(rows[-1], metrics, stats)
+        Path(args.markdown).write_text(md)
+        print(f"[report] markdown written to {args.markdown}")
 
 
 if __name__ == "__main__":

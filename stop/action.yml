@@ -14,10 +14,10 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Download previous history artifact
+    - name: Download latest history artifact
       uses: dawidd6/action-download-artifact@v6
       with:
-        name: carbon-history
+        name: carbon-history-latest
         path: ${{ runner.temp }}/history
         if_no_artifact_found: warn
         search_artifacts: true
@@ -39,6 +39,8 @@ runs:
       env:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        WORKFLOW_NAME: ${{ github.workflow }}
+        RUN_NUMBER: ${{ github.run_number }}
       run: |
         python ${{ github.action_path }}/report.py \
           --dir "$RUNNER_TEMP" \
@@ -49,10 +51,21 @@ runs:
       shell: bash
       run: cat "$RUNNER_TEMP/carbon-report.md" >> "$GITHUB_STEP_SUMMARY"
 
-    - name: Upload history artifact
+    - name: Generate artifact date
+      id: artifact-date
+      shell: bash
+      run: echo "date=$(date -u +'%Y-%m-%d-%H%M%S')" >> "$GITHUB_OUTPUT"
+
+    - name: Upload dated history artifact
       uses: actions/upload-artifact@v4
       with:
-        name: carbon-history
+        name: carbon-history-${{ steps.artifact-date.outputs.date }}
+        path: ${{ inputs.history-file }}
+
+    - name: Upload latest history artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: carbon-history-latest
         path: ${{ inputs.history-file }}
         overwrite: true
 
