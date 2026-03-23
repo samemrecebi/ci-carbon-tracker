@@ -14,6 +14,26 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Download previous history artifact
+      uses: dawidd6/action-download-artifact@v6
+      with:
+        name: carbon-history
+        path: ${{ runner.temp }}/history
+        if_no_artifact_found: warn
+        search_artifacts: true
+        workflow_conclusion: ""
+
+    - name: Restore previous history
+      shell: bash
+      run: |
+        HISTORY_FILE="${{ inputs.history-file }}"
+        if [ -f "$RUNNER_TEMP/history/$HISTORY_FILE" ]; then
+          cp "$RUNNER_TEMP/history/$HISTORY_FILE" "$HISTORY_FILE"
+          echo "[history] restored previous history"
+        else
+          echo "[history] no previous history found — first run"
+        fi
+
     - name: Stop tracker and generate report
       shell: bash
       env:
@@ -25,9 +45,16 @@ runs:
           --markdown "$RUNNER_TEMP/carbon-report.md" \
           --history "${{ inputs.history-file }}"
 
-    - name: Print report to log
+    - name: Write job summary
       shell: bash
-      run: cat "$RUNNER_TEMP/carbon-report.md"
+      run: cat "$RUNNER_TEMP/carbon-report.md" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload history artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: carbon-history
+        path: ${{ inputs.history-file }}
+        overwrite: true
 
     - name: Comment on PR
       if: ${{ inputs.pr-comment == 'true' && github.event_name == 'pull_request' }}
@@ -42,16 +69,3 @@ runs:
           gh api -X DELETE "repos/${{ github.repository }}/issues/comments/$COMMENT_ID"
         fi
         gh pr comment "${{ github.event.pull_request.number }}" --body-file "$RUNNER_TEMP/carbon-report.md"
-
-    - name: Commit carbon history
-      shell: bash
-      run: |
-        BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
-        git fetch origin "$BRANCH"
-        git checkout "$BRANCH"
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add "${{ inputs.history-file }}"
-        git diff --cached --quiet && echo "No changes to commit" && exit 0
-        git commit -m "chore: update carbon history [skip ci]"
-        git push origin "$BRANCH"
