@@ -19,6 +19,8 @@ sleep 10
 echo "Generating report..."
 export PR_NUMBER="test-local"
 export BRANCH_NAME="local"
+export WORKFLOW_NAME="local-test"
+export RUN_NUMBER="1"
 uv run stop/report.py --dir "$DIR" --markdown "$DIR/carbon-report.md" --history carbon-history-local.csv
 
 echo ""

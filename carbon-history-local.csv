@@ -1,4 +1,4 @@
-timestamp,pr_number,branch,duration_s,energy_wh,co2_g,cpu_avg,cpu_peak,mem_avg_pct,mem_peak_mb,disk_read_mb,disk_write_mb,net_sent_mb,net_recv_mb
-2026-03-19T16:51:56.964580+00:00,test-local,local,5.52,0.0332,0.0089,2.52,2.9,7.7,2458.6,0.0,8.84,0.81,0.73
-2026-03-21T09:44:52.664417+00:00,2,asm/add-central-workflow,20.51,0.1221,0.0251,2.3,7.1,11.31,911.8,0.01,390.11,0.36,0.07
-2026-03-23T19:30:43.846784+00:00,test-local,local,7.5,0.0428,0.0114,0.93,2.0,40.62,12722.2,0.55,2.2,0.03,0.34
+timestamp,workflow,run_number,pr_number,branch,duration_s,energy_wh,co2_g,cpu_avg,cpu_peak,mem_avg_pct,mem_peak_mb,disk_read_mb,disk_write_mb,net_sent_mb,net_recv_mb
+2026-03-23T19:53:01.397614+00:00,,,test-local,local,8.5,0.0472,0.0126,1.46,2.1,43.93,13739.1,0.02,2.64,0.04,0.11
+2026-03-23T19:55:18.903457+00:00,local-test,1,test-local,local,8.5,0.0472,0.0126,2.3,7.1,43.77,13678.3,0.08,37.75,0.04,0.24
+2026-03-23T19:57:08.610314+00:00,local-test,1,test-local,local,8.5,0.0472,0.0126,0.93,1.7,43.96,13732.1,0.0,2.35,0.04,0.07
