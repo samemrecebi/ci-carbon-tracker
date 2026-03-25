@@ -1,4 +1,4 @@
-name: CI with Carbon Tracking
+name: CI with Carbon Tracking Test 1 (Linting and formatting)
 
 on:
   pull_request:
@@ -8,27 +8,27 @@ permissions:
   actions: read
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
-  build:
+  lint-and-format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: ./start
 
-      - name: Build step (mock)
-        run: |
-          echo "Installing dependencies..."
-          sleep 5
-          echo "Compiling..."
-          sleep 5
+      - uses: astral-sh/ruff-action@v3
+        with:
+          src: >-
+            start/tracker.py
+            stop/report.py
 
-      - name: Test step (mock)
-        run: |
-          echo "Running tests..."
-          sleep 5
-          echo "All tests passed."
+      # Ruff Python linting
+      - run: ruff check --fix
+
+      # Ruff Python Formatting
+      - run: ruff format
 
       - uses: ./stop
         if: always()
