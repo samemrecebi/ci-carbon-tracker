@@ -42,7 +42,34 @@ def print_report(energy_row: dict, metrics: dict):
     print(f"  Samples        : {metrics['sample_count']}")
     print("========================")
     print()
+    suggestions = generate_suggestions(energy_row, metrics)
+    if suggestions:
+        print("  (LIMIT REACHED) Apply these suggestions to Reduce CO2 Impact")
+        for suggestion in suggestions:
+            print(f"   - {suggestion}")
+        print()
 
+def generate_suggestions(energy_row: dict, metrics: dict) -> list[str]:
+    suggestions = []
+
+    energy_wh = float(energy_row["energy_consumed"]) * 1000
+
+    # Example limits - need to be adjusted based on typical values for the repo and workflow type
+    ENERGY_LIMIT_WH = 0.15
+
+    if energy_wh > ENERGY_LIMIT_WH:
+        suggestions = [
+            "Reduce runtime / space complexity of algorithms",
+            "Use caching / lazy loading",
+            "Remove unused libraries / frameworks / imports",
+            "Stop over-engineering (unnecessary infrastructure or design patterns)",
+            "Only trigger the pipeline for the changed code, this can be easier in a microservice architecture than in a monolith",
+            "Avoid running unnecessary tests (focus on impacted areas)",
+            "Reuse build artifacts instead of rebuilding everything",
+            "Use lighter base images / dependencies where possible"
+        ]
+
+    return suggestions
 
 def compute_history_stats(history_path: Path, current_workflow: str) -> dict:
     """Read history CSV and compute per-workflow and repo-wide stats."""
@@ -145,6 +172,12 @@ def generate_markdown(energy_row: dict, metrics: dict, stats: dict) -> str:
         for wf_name, wf_stats in sorted(stats["workflows"].items()):
             md += f"| {wf_name} | {wf_stats['runs']} | {wf_stats['energy_wh']:.4f} | {wf_stats['co2_g']:.4f} |\n"
 
+    suggestions = generate_suggestions(energy_row, metrics)
+    if suggestions:
+        md += "\n### (LIMIT REACHED) Apply these suggestions to Reduce CO2 Impact\n\n"
+        for suggestion in suggestions:
+            md += f"- {suggestion}\n"
+    
     return md
 
 
