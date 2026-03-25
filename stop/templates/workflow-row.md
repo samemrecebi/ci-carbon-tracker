@@ -1,0 +1,1 @@
+| ${name} | ${runs} | ${energy_wh} | ${co2_g} |

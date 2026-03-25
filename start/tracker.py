@@ -51,7 +51,7 @@ def main():
         cpu_samples.append(psutil.cpu_percent())
         vm = psutil.virtual_memory()
         mem_samples.append(vm.percent)
-        mem_used_samples.append(vm.used / 1024 ** 2)  # MB
+        mem_used_samples.append(vm.used / 1024**2)  # MB
 
     tracker.stop()
     print("[tracker] stopped, emissions.csv written", flush=True)
@@ -62,13 +62,19 @@ def main():
     metrics = {
         "cpu_avg": round(sum(cpu_samples) / len(cpu_samples), 2) if cpu_samples else 0,
         "cpu_peak": round(max(cpu_samples), 2) if cpu_samples else 0,
-        "mem_avg_pct": round(sum(mem_samples) / len(mem_samples), 2) if mem_samples else 0,
+        "mem_avg_pct": round(sum(mem_samples) / len(mem_samples), 2)
+        if mem_samples
+        else 0,
         "mem_peak_pct": round(max(mem_samples), 2) if mem_samples else 0,
         "mem_peak_mb": round(max(mem_used_samples), 1) if mem_used_samples else 0,
-        "disk_read_mb": round((disk_end.read_bytes - disk_start.read_bytes) / 1024 ** 2, 2),
-        "disk_write_mb": round((disk_end.write_bytes - disk_start.write_bytes) / 1024 ** 2, 2),
-        "net_sent_mb": round((net_end.bytes_sent - net_start.bytes_sent) / 1024 ** 2, 2),
-        "net_recv_mb": round((net_end.bytes_recv - net_start.bytes_recv) / 1024 ** 2, 2),
+        "disk_read_mb": round(
+            (disk_end.read_bytes - disk_start.read_bytes) / 1024**2, 2
+        ),
+        "disk_write_mb": round(
+            (disk_end.write_bytes - disk_start.write_bytes) / 1024**2, 2
+        ),
+        "net_sent_mb": round((net_end.bytes_sent - net_start.bytes_sent) / 1024**2, 2),
+        "net_recv_mb": round((net_end.bytes_recv - net_start.bytes_recv) / 1024**2, 2),
         "sample_count": len(cpu_samples),
     }
     metrics_file.write_text(json.dumps(metrics, indent=2))
