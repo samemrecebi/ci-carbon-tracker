@@ -8,5 +8,9 @@
     "create_issue": true,
     "issue_label": "carbon-alert",
     "pr_comment": true
+  },
+  "codecarbon": {
+    "pue": 1.18,
+    "force_cpu_power": null
   }
 }
