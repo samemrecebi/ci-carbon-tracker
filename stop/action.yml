@@ -65,15 +65,18 @@ runs:
         path: ${{ runner.temp }}/carbon-run-entry.csv
 
     - name: Download all run artifacts
-      uses: dawidd6/action-download-artifact@v6
-      with:
-        name: carbon-run-.*
-        name_is_regexp: true
-        path: ${{ runner.temp }}/history-runs
-        if_no_artifact_found: warn
-        search_artifacts: true
-        workflow: ""
-        workflow_conclusion: ""
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        mkdir -p "$RUNS_DIR"
+        echo "[download] fetching all carbon-run artifacts..."
+        gh api "repos/$REPO/actions/artifacts?per_page=100" --paginate --jq '.artifacts[] | select(.name | startswith("carbon-run-")) | select(.expired == false) | [.id, .name] | @tsv' | while IFS=$'\t' read -r id name; do
+          echo "[download] downloading $name (id: $id)"
+          gh api "repos/$REPO/actions/artifacts/$id/zip" > "$RUNS_DIR/$name.zip" 2>/dev/null && unzip -o -q "$RUNS_DIR/$name.zip" -d "$RUNS_DIR/$name" && rm "$RUNS_DIR/$name.zip" || echo "[download] warning: failed to download $name"
+        done
+        echo "[download] done, contents:"
+        ls -R "$RUNS_DIR" || echo "[download] no artifacts found"
 
     - name: Build history and generate report
       shell: bash
