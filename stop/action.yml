@@ -56,12 +56,12 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-      run: python "$WAIT_PY" --repo "$REPO" --run-id "$THIS_RUN_ID"
+      run: python "$WAIT_PY" --repo "$REPO" --run-id "$THIS_RUN_ID" --workflow-name "$WORKFLOW_NAME"
 
     - name: Upload run history entry
       uses: actions/upload-artifact@v4
       with:
-        name: carbon-run-${{ github.run_id }}
+        name: carbon-run-${{ github.run_id }}-${{ runner.os }}-${{ runner.arch }}
         path: ${{ runner.temp }}/carbon-run-entry.csv
 
     - name: Download all run artifacts
@@ -72,6 +72,7 @@ runs:
         path: ${{ runner.temp }}/history-runs
         if_no_artifact_found: warn
         search_artifacts: true
+        workflow: ""
         workflow_conclusion: ""
 
     - name: Build history and generate report

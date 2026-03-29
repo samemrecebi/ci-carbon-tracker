@@ -82,7 +82,7 @@ def print_report(energy_row: dict, metrics: dict, config: dict):
     duration = safe_float(energy_row["duration"])
     energy_kwh = safe_float(energy_row["energy_consumed"])
     co2_kg = safe_float(energy_row["emissions"])
-    cpu_energy_kwh = float(energy_row.get("cpu_energy", 0))
+    cpu_energy_kwh = safe_float(energy_row.get("cpu_energy", 0))
     ram_energy_kwh = safe_float(energy_row.get("ram_energy", 0))
     energy_source = energy_row.get("energy_consumed_source", "estimated")
 
@@ -195,6 +195,29 @@ def compute_history_stats(history_path: Path, current_workflow: str) -> dict:
     return stats
 
 
+def compute_pr_stats(history_path: Path, pr_number: str) -> list[dict]:
+    """Extract per-workflow stats for a specific PR from the history CSV."""
+    if not pr_number or not history_path or not history_path.exists():
+        return []
+
+    workflows: dict[str, dict] = {}
+    with open(history_path, newline="") as f:
+        for row in csv.DictReader(f):
+            if row.get("pr_number") != pr_number:
+                continue
+            wf = row.get("workflow", "unknown")
+            if wf not in workflows:
+                workflows[wf] = {"workflow": wf, "energy_wh": 0.0, "co2_g": 0.0, "duration_s": 0.0}
+            try:
+                workflows[wf]["energy_wh"] += float(row.get("energy_wh", 0))
+                workflows[wf]["co2_g"] += float(row.get("co2_g", 0))
+                workflows[wf]["duration_s"] += float(row.get("duration_s", 0))
+            except (ValueError, TypeError):
+                continue
+
+    return list(workflows.values())
+
+
 def load_template(name: str, templates_dir: Path | None = None) -> Template:
     """Load a template file by name from the templates directory."""
     tpl_dir = templates_dir or TEMPLATES_DIR
@@ -203,6 +226,7 @@ def load_template(name: str, templates_dir: Path | None = None) -> Template:
 
 def generate_markdown(
     energy_row: dict, metrics: dict, stats: dict, config: dict,
+    pr_workflows: list[dict] | None = None,
 ) -> str:
     """Generate the markdown report by rendering templates."""
     tpl_dir = TEMPLATES_DIR
@@ -216,7 +240,7 @@ def generate_markdown(
         "energy_wh": f"{energy_kwh * 1000:.4f}",
         "energy_source": energy_row.get("energy_consumed_source", "estimated"),
         "cpu_energy_wh": f"{safe_float(energy_row.get('cpu_energy', 0)) * 1000:.4f}",
-        "ram_energy_wh": f"{float(energy_row.get('ram_energy', 0)) * 1000:.4f}",
+        "ram_energy_wh": f"{safe_float(energy_row.get('ram_energy', 0)) * 1000:.4f}",
         "co2_g": f"{co2_kg * 1000:.4f}",
         "cpu_avg": metrics["cpu_avg"],
         "cpu_peak": metrics["cpu_peak"],
@@ -248,8 +272,31 @@ def generate_markdown(
                 runs=wf_stats["runs"],
                 energy_wh=f"{wf_stats['energy_wh']:.4f}",
                 co2_g=f"{wf_stats['co2_g']:.4f}",
-            )
+            ) + "\n"
         md += "\n" + load_template("workflow-breakdown.md", tpl_dir).safe_substitute(rows=rows)
+
+    if pr_workflows:
+        row_tpl = load_template("pr-summary-row.md", tpl_dir)
+        rows = ""
+        total_energy = 0.0
+        total_co2 = 0.0
+        total_duration = 0.0
+        for wf in pr_workflows:
+            rows += row_tpl.safe_substitute(
+                workflow=wf["workflow"],
+                energy_wh=f"{wf['energy_wh']:.4f}",
+                co2_g=f"{wf['co2_g']:.4f}",
+                duration_s=f"{wf['duration_s']:.1f}",
+            ) + "\n"
+            total_energy += wf["energy_wh"]
+            total_co2 += wf["co2_g"]
+            total_duration += wf["duration_s"]
+        md += "\n" + load_template("pr-summary.md", tpl_dir).safe_substitute(
+            rows=rows,
+            total_energy_wh=f"{total_energy:.4f}",
+            total_co2_g=f"{total_co2:.4f}",
+            total_duration_s=f"{total_duration:.1f}",
+        )
 
     if is_threshold_breached(energy_row, config):
         md += "\n" + load_template("suggestions.md", tpl_dir).substitute()
@@ -411,7 +458,16 @@ def main():
             append_history(Path(args.history), rows[-1], metrics)
             print(f"[report] history appended to {args.history}")
 
+    pr_number = os.environ.get("PR_NUMBER", "")
+    history_path = Path(args.history) if args.history else None
+
     breached = check_thresholds(rows[-1], config)
+
+    pr_workflows = (
+        compute_pr_stats(history_path, pr_number)
+        if history_path and pr_number
+        else None
+    )
 
     threshold_file = state_dir / "threshold_exceeded"
     if breached:
@@ -423,7 +479,6 @@ def main():
 
     if args.markdown:
         workflow_name = os.environ.get("WORKFLOW_NAME", "unknown")
-        history_path = Path(args.history) if args.history else None
         stats = (
             compute_history_stats(history_path, workflow_name)
             if history_path
@@ -440,7 +495,7 @@ def main():
                 "workflows": {},
             }
         )
-        md = generate_markdown(rows[-1], metrics, stats, config)
+        md = generate_markdown(rows[-1], metrics, stats, config, pr_workflows)
         Path(args.markdown).write_text(md)
         print(f"[report] markdown written to {args.markdown}")
 

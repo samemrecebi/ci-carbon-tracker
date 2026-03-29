@@ -109,6 +109,10 @@ After each run, the stop action commits the updated `carbon-history.csv` back to
 - Pushes by `github-actions[bot]` do not trigger `on: push` or `on: pull_request` events by default
 - `[skip ci]` in the commit message is a GitHub-recognized flag that skips all workflow runs for that commit
 
+## Limitations
+
+- **Matrix jobs are not supported.** The start/stop actions should be used in jobs without a `strategy.matrix`. Each job in a matrix uploads artifacts and generates reports independently, which can cause conflicts. If you need to test across multiple OS/arch combinations, use separate workflows instead of a matrix.
+
 ## Testing on GitHub
 
 Push a branch and open a PR. The workflow triggers automatically and posts a carbon report comment on the PR.
