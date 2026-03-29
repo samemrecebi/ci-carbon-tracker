@@ -10,64 +10,84 @@ inputs:
     description: "Path to CSV history file (relative to repo root)"
     required: false
     default: "carbon-history.csv"
+  create-issue:
+    description: "Open a GitHub Issue when energy threshold is exceeded (true/false)"
+    required: false
+    default: "true"
+  issue-label:
+    description: "Label to apply to carbon threshold issues"
+    required: false
+    default: "carbon-alert"
+  config-file:
+    description: "Path to .cicarbon.json config file (relative to repo root)"
+    required: false
+    default: ".cicarbon.json"
 
 runs:
   using: "composite"
   steps:
-    - name: Download latest history artifact
+    - name: Set environment variables
+      shell: bash
+      run: |
+        cat >> "$GITHUB_ENV" <<EOF
+        PR_NUMBER=${{ github.event.pull_request.number }}
+        BRANCH_NAME=${{ github.head_ref || github.ref_name }}
+        WORKFLOW_NAME=${{ github.workflow }}
+        RUN_NUMBER=${{ github.run_number }}
+        THIS_RUN_ID=${{ github.run_id }}
+        REPO=${{ github.repository }}
+        HISTORY_FILE=${{ inputs.history-file }}
+        CONFIG_FILE=${{ inputs.config-file }}
+        ISSUE_LABEL=${{ inputs.issue-label }}
+        REPORT_PY=${{ github.action_path }}/report.py
+        WAIT_PY=${{ github.action_path }}/wait_for_runs.py
+        REPORT_MD=$RUNNER_TEMP/carbon-report.md
+        RUNS_DIR=$RUNNER_TEMP/history-runs
+        EOF
+
+    - name: Stop tracker
+      shell: bash
+      run: |
+        python "$REPORT_PY" \
+          --dir "$RUNNER_TEMP" \
+          --config "$CONFIG_FILE"
+
+    - name: Wait for concurrent runs
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python "$WAIT_PY" --repo "$REPO" --run-id "$THIS_RUN_ID"
+
+    - name: Upload run history entry
+      uses: actions/upload-artifact@v4
+      with:
+        name: carbon-run-${{ github.run_id }}
+        path: ${{ runner.temp }}/carbon-run-entry.csv
+
+    - name: Download all run artifacts
       uses: dawidd6/action-download-artifact@v6
       with:
-        name: carbon-history-latest
-        path: ${{ runner.temp }}/history
+        name: carbon-run-.*
+        name_is_regexp: true
+        path: ${{ runner.temp }}/history-runs
         if_no_artifact_found: warn
         search_artifacts: true
         workflow_conclusion: ""
 
-    - name: Restore previous history
+    - name: Build history and generate report
       shell: bash
       run: |
-        HISTORY_FILE="${{ inputs.history-file }}"
-        if [ -f "$RUNNER_TEMP/history/$HISTORY_FILE" ]; then
-          cp "$RUNNER_TEMP/history/$HISTORY_FILE" "$HISTORY_FILE"
-          echo "[history] restored previous history"
-        else
-          echo "[history] no previous history found — first run"
-        fi
-
-    - name: Stop tracker and generate report
-      shell: bash
-      env:
-        PR_NUMBER: ${{ github.event.pull_request.number }}
-        BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
-        WORKFLOW_NAME: ${{ github.workflow }}
-        RUN_NUMBER: ${{ github.run_number }}
-      run: |
-        python ${{ github.action_path }}/report.py \
+        python "$REPORT_PY" --rebuild-history "$RUNS_DIR" --history "$HISTORY_FILE"
+        python "$REPORT_PY" \
           --dir "$RUNNER_TEMP" \
-          --markdown "$RUNNER_TEMP/carbon-report.md" \
-          --history "${{ inputs.history-file }}"
+          --markdown "$REPORT_MD" \
+          --history "$HISTORY_FILE" \
+          --config "$CONFIG_FILE" \
+          --report-only
 
     - name: Write job summary
       shell: bash
-      run: cat "$RUNNER_TEMP/carbon-report.md" >> "$GITHUB_STEP_SUMMARY"
-
-    - name: Generate artifact date
-      id: artifact-date
-      shell: bash
-      run: echo "date=$(date -u +'%Y-%m-%d-%H%M%S')" >> "$GITHUB_OUTPUT"
-
-    - name: Upload dated history artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: carbon-history-${{ steps.artifact-date.outputs.date }}
-        path: ${{ inputs.history-file }}
-
-    - name: Upload latest history artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: carbon-history-latest
-        path: ${{ inputs.history-file }}
-        overwrite: true
+      run: cat "$REPORT_MD" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Comment on PR
       if: ${{ inputs.pr-comment == 'true' && github.event_name == 'pull_request' }}
@@ -75,10 +95,68 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        # Delete previous carbon tracker comment if it exists
-        COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+        COMMENT_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
           --jq '.[] | select(.body | startswith("## CI Carbon Report")) | .id' 2>/dev/null || true)
         if [ -n "$COMMENT_ID" ]; then
-          gh api -X DELETE "repos/${{ github.repository }}/issues/comments/$COMMENT_ID"
+          gh api -X DELETE "repos/$REPO/issues/comments/$COMMENT_ID"
         fi
-        gh pr comment "${{ github.event.pull_request.number }}" --body-file "$RUNNER_TEMP/carbon-report.md"
+        gh pr comment "$PR_NUMBER" --body-file "$REPORT_MD"
+
+    - name: Check threshold status
+      if: ${{ inputs.create-issue == 'true' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |   
+        if [ "$(cat "$RUNNER_TEMP/threshold_exceeded")" = "true" ]; then
+          echo "[notify] threshold exceeded"
+          echo "THRESHOLD_BROKEN=true" >> "$GITHUB_ENV"
+        else
+          echo "[notify] threshold not exceeded — skipping issue creation"
+          echo "THRESHOLD_BROKEN=false" >> "$GITHUB_ENV"
+        fi
+
+    - name: Check for existing carbon alert issue
+      if: ${{ env.THRESHOLD_BROKEN == 'true' }}
+      id: check-issue
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        TITLE="Carbon Alert: $WORKFLOW_NAME exceeded energy threshold"
+        gh label create "$ISSUE_LABEL" --description "CI carbon/energy threshold exceeded" --color "D93F0B" 2>/dev/null || true
+        EXISTING=$(gh issue list --label "$ISSUE_LABEL" --search "$TITLE" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+        echo "issue_number=$EXISTING" >> "$GITHUB_OUTPUT"
+
+    - name: Create or update issue on threshold breach
+      if: ${{ env.THRESHOLD_BROKEN == 'true' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        RUN_URL="${{ github.server_url }}/$REPO/actions/runs/$THIS_RUN_ID"
+        TITLE="Carbon Alert: $WORKFLOW_NAME exceeded energy threshold"
+        EXISTING="${{ steps.check-issue.outputs.issue_number }}"
+
+        BODY=$(cat <<ISSUE_EOF
+        ## Carbon Threshold Exceeded
+
+        The CI workflow **$WORKFLOW_NAME** on branch \`$BRANCH_NAME\` exceeded the energy threshold.
+
+        **Run:** $RUN_URL
+
+        $(cat "$REPORT_MD")
+
+        ---
+        *This issue was automatically created by the CI Carbon Tracker.*
+        ISSUE_EOF
+        )
+        BODY=$(echo "$BODY" | sed 's/^        //')
+
+        if [ -n "$EXISTING" ]; then
+          gh issue comment "$EXISTING" --body "$BODY"
+          echo "[notify] commented on existing issue #$EXISTING"
+        else
+          gh issue create --title "$TITLE" --body "$BODY" --label "$ISSUE_LABEL"
+          echo "[notify] created new threshold issue"
+        fi

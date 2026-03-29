@@ -1,0 +1,46 @@
+name: CI with Carbon Tracking Test 2 (Docker Container Building Multi Machine)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  build-container:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          [
+            ubuntu-latest,
+            ubuntu-24.04-arm,
+          ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - uses: ./start
+        with:
+          electricitymaps-token: ${{ secrets.ELEC_MAPS }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          file: Dockerfile
+
+      - uses: ./stop
+        if: always()
+        with:
+          pr-comment: "true"

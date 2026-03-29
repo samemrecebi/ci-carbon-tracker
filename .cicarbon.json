@@ -1,0 +1,12 @@
+{
+  "thresholds": {
+    "energy_wh": 0.15,
+    "co2_g": null,
+    "duration_s": null
+  },
+  "notifications": {
+    "create_issue": true,
+    "issue_label": "carbon-alert",
+    "pr_comment": true
+  }
+}

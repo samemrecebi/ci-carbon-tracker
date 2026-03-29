@@ -6,6 +6,10 @@ inputs:
     description: "Python version to use"
     required: false
     default: "3.12"
+  electricitymaps-token:
+    description: "Electricity Maps API token for real-time carbon intensity data"
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -21,6 +25,8 @@ runs:
 
     - name: Start tracker in background
       shell: bash
+      env:
+        ELECTRICITYMAPS_TOKEN: ${{ inputs.electricitymaps-token }}
       run: |
         python ${{ github.action_path }}/tracker.py --dir "$RUNNER_TEMP" &
         sleep 2
