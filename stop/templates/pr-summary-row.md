@@ -1,0 +1,1 @@
+| ${workflow} | ${energy_wh} | ${co2_g} | ${duration_s} |
