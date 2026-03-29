@@ -2,6 +2,7 @@ import csv
 import datetime
 import json
 import os
+import tempfile
 import time
 import argparse
 from pathlib import Path
@@ -59,6 +60,14 @@ def load_config(config_path: Path | None = None) -> dict:
     return config
 
 
+def safe_float(value, default: float = 0.0) -> float:
+    """Convert a value to float, returning default if empty or invalid."""
+    try:
+        return float(value) if value != "" else default
+    except (TypeError, ValueError):
+        return default
+
+
 def wait_for_file(path: Path, timeout: int = 15) -> bool:
     """Wait until a file exists and is non-empty."""
     for _ in range(timeout):
@@ -70,11 +79,11 @@ def wait_for_file(path: Path, timeout: int = 15) -> bool:
 
 def print_report(energy_row: dict, metrics: dict, config: dict):
     """Print the report on the terminal. This is mainly used when testing locally."""
-    duration = float(energy_row["duration"])
-    energy_kwh = float(energy_row["energy_consumed"])
-    co2_kg = float(energy_row["emissions"])
+    duration = safe_float(energy_row["duration"])
+    energy_kwh = safe_float(energy_row["energy_consumed"])
+    co2_kg = safe_float(energy_row["emissions"])
     cpu_energy_kwh = float(energy_row.get("cpu_energy", 0))
-    ram_energy_kwh = float(energy_row.get("ram_energy", 0))
+    ram_energy_kwh = safe_float(energy_row.get("ram_energy", 0))
     energy_source = energy_row.get("energy_consumed_source", "estimated")
 
     print()
@@ -106,9 +115,9 @@ def check_thresholds(energy_row: dict, config: dict) -> list[str]:
     thresholds = config.get("thresholds", {})
     breached = []
 
-    energy_wh = float(energy_row["energy_consumed"]) * 1000
-    co2_g = float(energy_row["emissions"]) * 1000
-    duration_s = float(energy_row["duration"])
+    energy_wh = safe_float(energy_row["energy_consumed"]) * 1000
+    co2_g = safe_float(energy_row["emissions"]) * 1000
+    duration_s = safe_float(energy_row["duration"])
 
     energy_limit = thresholds.get("energy_wh")
     if energy_limit is not None and energy_wh > energy_limit:
@@ -198,15 +207,15 @@ def generate_markdown(
     """Generate the markdown report by rendering templates."""
     tpl_dir = TEMPLATES_DIR
 
-    duration = float(energy_row["duration"])
-    energy_kwh = float(energy_row["energy_consumed"])
-    co2_kg = float(energy_row["emissions"])
+    duration = safe_float(energy_row["duration"])
+    energy_kwh = safe_float(energy_row["energy_consumed"])
+    co2_kg = safe_float(energy_row["emissions"])
 
     values = {
         "duration_s": f"{duration:.2f}",
         "energy_wh": f"{energy_kwh * 1000:.4f}",
         "energy_source": energy_row.get("energy_consumed_source", "estimated"),
-        "cpu_energy_wh": f"{float(energy_row.get('cpu_energy', 0)) * 1000:.4f}",
+        "cpu_energy_wh": f"{safe_float(energy_row.get('cpu_energy', 0)) * 1000:.4f}",
         "ram_energy_wh": f"{float(energy_row.get('ram_energy', 0)) * 1000:.4f}",
         "co2_g": f"{co2_kg * 1000:.4f}",
         "cpu_avg": metrics["cpu_avg"],
@@ -256,9 +265,9 @@ def build_history_entry(energy_row: dict, metrics: dict) -> dict:
         "run_number": os.environ.get("RUN_NUMBER", ""),
         "pr_number": os.environ.get("PR_NUMBER", ""),
         "branch": os.environ.get("BRANCH_NAME", ""),
-        "duration_s": round(float(energy_row["duration"]), 2),
-        "energy_wh": round(float(energy_row["energy_consumed"]) * 1000, 4),
-        "co2_g": round(float(energy_row["emissions"]) * 1000, 4),
+        "duration_s": round(safe_float(energy_row["duration"]), 2),
+        "energy_wh": round(safe_float(energy_row["energy_consumed"]) * 1000, 4),
+        "co2_g": round(safe_float(energy_row["emissions"]) * 1000, 4),
         "cpu_avg": metrics["cpu_avg"],
         "cpu_peak": metrics["cpu_peak"],
         "mem_avg_pct": metrics["mem_avg_pct"],
@@ -318,8 +327,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dir",
-        default=os.environ.get("RUNNER_TEMP", "/tmp"),
-        help="Directory where tracker.py wrote its state (default: $RUNNER_TEMP or /tmp)",
+        default=os.environ.get("RUNNER_TEMP", tempfile.gettempdir()),
+        help="Directory where tracker.py wrote its state (default: $RUNNER_TEMP or system temp)",
     )
     parser.add_argument(
         "--markdown", default=None, help="Path to write markdown report"

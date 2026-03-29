@@ -6,6 +6,18 @@ inputs:
     description: "Python version to use"
     required: false
     default: "3.12"
+  electricitymaps-token:
+    description: "Electricity Maps API token for real-time carbon intensity data"
+    required: false
+    default: ""
+  tracking-mode:
+    description: "CodeCarbon tracking mode: 'machine' (whole runner) or 'process' (just your CI job)"
+    required: false
+    default: "machine"
+  config-file:
+    description: "Path to .cicarbon.json config file (relative to repo root)"
+    required: false
+    default: ".cicarbon.json"
 
 runs:
   using: "composite"
@@ -21,7 +33,10 @@ runs:
 
     - name: Start tracker in background
       shell: bash
+      env:
+        ELECTRICITYMAPS_TOKEN: ${{ inputs.electricitymaps-token }}
+        TRACKING_MODE: ${{ inputs.tracking-mode }}
       run: |
-        python ${{ github.action_path }}/tracker.py --dir "$RUNNER_TEMP" &
+        python ${{ github.action_path }}/tracker.py --dir "$RUNNER_TEMP" --config "${{ inputs.config-file }}" &
         sleep 2
         echo "Carbon tracker started"

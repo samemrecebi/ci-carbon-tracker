@@ -1,5 +1,6 @@
 .claude/
 carbon-history.csv
+carbon-history-local.csv
 # Created by https://www.toptal.com/developers/gitignore/api/venv,python,macos,linux,git
 # Edit at https://www.toptal.com/developers/gitignore?templates=venv,python,macos,linux,git
 ### Linux ###

@@ -1,8 +1,8 @@
 name: CI with Carbon Tracking Test 2 (Docker Container Building)
 
 on:
-    pull_request:
-    workflow_dispatch:
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   actions: read
@@ -11,27 +11,30 @@ permissions:
   issues: write
 
 jobs:
-    build-container:
-        name: Build and push API
-        runs-on: ubuntu-latest
+  build-container:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
 
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
 
-            - uses: ./start
+      - uses: ./start
 
-            - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-            - name: Build and push Docker image
-              uses: docker/build-push-action@v6
-              with:
-                  context: .
-                  push: false
-                  file: Dockerfile
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./tests
+          file: ./tests/Dockerfile.test
+          push: false
 
-            - uses: ./stop
-              if: always()
-              with:
-                  pr-comment: "true"
+      - uses: ./stop
+        if: always()
+        with:
+          pr-comment: "true"
