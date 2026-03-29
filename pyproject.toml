@@ -1,10 +1,7 @@
 [project]
 name = "ci-carbon-tracker"
-version = "0.1.0"
-description = "Add your description here"
+version = "1.0.0"
+description = "A GitHub Actions integration that tracks CI/CD energy consumption and carbon emissions, providing developers with actionable sustainability insights and threshold-based alerts across workflow runs."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "codecarbon>=3.2.3",
-    "psutil>=5.9",
-]
+dependencies = ["codecarbon>=3.2.3", "psutil>=5.9"]

@@ -16,11 +16,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os:
-          [
-            ubuntu-latest,
-            ubuntu-24.04-arm,
-          ]
+        os: [ubuntu-latest, ubuntu-24.04-arm]
 
     steps:
       - name: Checkout repository
@@ -36,7 +32,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./tests/Dockerfile.test
           push: false
           file: Dockerfile
 
