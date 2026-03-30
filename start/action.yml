@@ -37,6 +37,11 @@ runs:
         ELECTRICITYMAPS_TOKEN: ${{ inputs.electricitymaps-token }}
         TRACKING_MODE: ${{ inputs.tracking-mode }}
       run: |
-        python ${{ github.action_path }}/tracker.py --dir "$RUNNER_TEMP" --config "${{ inputs.config-file }}" &
-        sleep 2
-        echo "Carbon tracker started"
+        nohup python ${{ github.action_path }}/tracker.py --dir "$RUNNER_TEMP" --config "${{ inputs.config-file }}" > "$RUNNER_TEMP/tracker.log" 2>&1 &
+        sleep 3
+        if [ -f "$RUNNER_TEMP/tracker.pid" ]; then
+          echo "Carbon tracker started (PID $(cat "$RUNNER_TEMP/tracker.pid"))"
+        else
+          echo "WARNING: tracker.pid not found after startup — check $RUNNER_TEMP/tracker.log"
+          cat "$RUNNER_TEMP/tracker.log" 2>/dev/null || true
+        fi

@@ -22,6 +22,10 @@ inputs:
     description: "Path to .cicarbon.json config file (relative to repo root)"
     required: false
     default: ".cicarbon.json"
+  job-name:
+    description: "Unique job identifier (e.g. matrix leg name) to avoid artifact name collisions"
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -48,23 +52,33 @@ runs:
     - name: Stop tracker
       shell: bash
       run: |
+        if [ ! -f "$RUNNER_TEMP/tracker.pid" ]; then
+          echo "[report] WARNING: tracker.pid not found — tracker may not have started"
+          echo "Tracker log (if available):"
+          cat "$RUNNER_TEMP/tracker.log" 2>/dev/null || echo "(no log found)"
+          echo "CARBON_TRACKER_SKIPPED=true" >> "$GITHUB_ENV"
+          exit 0
+        fi
         python "$REPORT_PY" \
           --dir "$RUNNER_TEMP" \
           --config "$CONFIG_FILE"
 
     - name: Wait for concurrent runs
+      if: ${{ env.CARBON_TRACKER_SKIPPED != 'true' }}
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
       run: python "$WAIT_PY" --repo "$REPO" --run-id "$THIS_RUN_ID" --workflow-name "$WORKFLOW_NAME"
 
     - name: Upload run history entry
+      if: ${{ env.CARBON_TRACKER_SKIPPED != 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        name: carbon-run-${{ github.run_id }}-${{ runner.os }}-${{ runner.arch }}
+        name: carbon-run-${{ github.run_id }}-${{ runner.os }}-${{ runner.arch }}${{ inputs.job-name && format('-{0}', inputs.job-name) || '' }}
         path: ${{ runner.temp }}/carbon-run-entry.csv
 
     - name: Download all run artifacts
+      if: ${{ env.CARBON_TRACKER_SKIPPED != 'true' }}
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
@@ -79,6 +93,7 @@ runs:
         ls -R "$RUNS_DIR" || echo "[download] no artifacts found"
 
     - name: Build history and generate report
+      if: ${{ env.CARBON_TRACKER_SKIPPED != 'true' }}
       shell: bash
       run: |
         python "$REPORT_PY" --rebuild-history "$RUNS_DIR" --history "$HISTORY_FILE"
@@ -90,11 +105,12 @@ runs:
           --report-only
 
     - name: Write job summary
+      if: ${{ env.CARBON_TRACKER_SKIPPED != 'true' }}
       shell: bash
       run: cat "$REPORT_MD" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Comment on PR
-      if: ${{ inputs.pr-comment == 'true' && github.event_name == 'pull_request' }}
+      if: ${{ env.CARBON_TRACKER_SKIPPED != 'true' && inputs.pr-comment == 'true' && github.event_name == 'pull_request' }}
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
@@ -107,11 +123,11 @@ runs:
         gh pr comment "$PR_NUMBER" --body-file "$REPORT_MD"
 
     - name: Check threshold status
-      if: ${{ inputs.create-issue == 'true' }}
+      if: ${{ env.CARBON_TRACKER_SKIPPED != 'true' && inputs.create-issue == 'true' }}
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-      run: |   
+      run: |
         if [ "$(cat "$RUNNER_TEMP/threshold_exceeded")" = "true" ]; then
           echo "[notify] threshold exceeded"
           echo "THRESHOLD_BROKEN=true" >> "$GITHUB_ENV"
@@ -121,7 +137,7 @@ runs:
         fi
 
     - name: Check for existing carbon alert issue
-      if: ${{ env.THRESHOLD_BROKEN == 'true' }}
+      if: ${{ env.CARBON_TRACKER_SKIPPED != 'true' && env.THRESHOLD_BROKEN == 'true' }}
       id: check-issue
       shell: bash
       env:
@@ -133,7 +149,7 @@ runs:
         echo "issue_number=$EXISTING" >> "$GITHUB_OUTPUT"
 
     - name: Create or update issue on threshold breach
-      if: ${{ env.THRESHOLD_BROKEN == 'true' }}
+      if: ${{ env.CARBON_TRACKER_SKIPPED != 'true' && env.THRESHOLD_BROKEN == 'true' }}
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
