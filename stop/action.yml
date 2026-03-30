@@ -115,11 +115,11 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        COMMENT_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+        COMMENT_IDS=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
           --jq '.[] | select(.body | startswith("## CI Carbon Report")) | .id' 2>/dev/null || true)
-        if [ -n "$COMMENT_ID" ]; then
-          gh api -X DELETE "repos/$REPO/issues/comments/$COMMENT_ID"
-        fi
+        for CID in $COMMENT_IDS; do
+          gh api -X DELETE "repos/$REPO/issues/comments/$CID"
+        done
         gh pr comment "$PR_NUMBER" --body-file "$REPORT_MD"
 
     - name: Check threshold status
